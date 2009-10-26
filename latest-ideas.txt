@@ -1,0 +1,24 @@
+For adding new triggers (addFK, addTable, addColumn)
+update specific trigger:
+   use logic already in place 
+
+For dropping of foreign key constraints (dropFK)
+modify specific trigger:
+   determine referenced table/column
+   query for trigger query
+   if query contains ON DELETE SET NULL behavior for referencing table/column modify query:
+   		
+
+For each change type that could affect the validity of a trigger (addFK, dropFK, addTable, dropTable, addColumn, dropColumn)
+validate all triggers:
+    create snapshot with all table/column names
+    find all triggers for cascade tables
+    for each trigger:
+ 	parse table/columns reference in trigger
+	for each table/column
+		if pair exists in snapshot, continue
+                        else remove from set of referenced tables/columns
+            end
+	if table/columns changed, drop re-add trigger
+            
+     end
