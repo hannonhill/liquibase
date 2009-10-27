@@ -363,16 +363,8 @@ public class AddForeignKeyConstraintChange extends AbstractChange
         {
             throw new UnsupportedChangeException(e.getMessage(), e);
         }
-
-        SqlStatement[] stmtsArr = new SqlStatement[stmts.size()];
-        int i = 0;
-        for (SqlStatement stmt : stmts)
-        {
-            stmtsArr[i] = stmt;
-            i++;
-        }
-
-        return stmtsArr;
+        
+        return stmts.toArray(new SqlStatement[stmts.size()]);
     }
 
     @Override

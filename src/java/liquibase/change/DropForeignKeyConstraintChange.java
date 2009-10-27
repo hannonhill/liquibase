@@ -153,15 +153,7 @@ public class DropForeignKeyConstraintChange extends AbstractChange
         stmts.add(new DropForeignKeyConstraintStatement(getBaseTableSchemaName() == null ? database.getDefaultSchemaName() : getBaseTableSchemaName(),
                 getBaseTableName(), getConstraintName()));
         
-        SqlStatement[] stmtsArr = new SqlStatement[stmts.size()];
-        int i = 0;
-        for (SqlStatement stmt : stmts)
-        {
-            stmtsArr[i] = stmt;
-            i++;
-        }
-        
-        return stmtsArr;
+        return stmts.toArray(new SqlStatement[stmts.size()]);
     }
 
     private SqlStatement[] generateStatementsForSQLiteDatabase(Database database) throws UnsupportedChangeException
