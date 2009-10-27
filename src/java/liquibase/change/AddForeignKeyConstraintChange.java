@@ -1,6 +1,15 @@
 package liquibase.change;
 
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import liquibase.database.Database;
+import liquibase.database.MSSQLDatabase;
 import liquibase.database.SQLiteDatabase;
 import liquibase.database.sql.AddForeignKeyConstraintStatement;
 import liquibase.database.sql.SqlStatement;
@@ -8,15 +17,12 @@ import liquibase.database.structure.Column;
 import liquibase.database.structure.DatabaseObject;
 import liquibase.database.structure.ForeignKey;
 import liquibase.database.structure.Table;
-import liquibase.exception.UnsupportedChangeException;
 import liquibase.exception.InvalidChangeDefinitionException;
+import liquibase.exception.UnsupportedChangeException;
 import liquibase.util.StringUtils;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-
-import java.util.HashSet;
-import java.util.Set;
-import java.sql.DatabaseMetaData;
 
 /**
  * Adds a foreign key constraint to an existing column.
@@ -252,6 +258,20 @@ public class AddForeignKeyConstraintChange extends AbstractChange
             return generateStatementsForSQLiteDatabase(database);
         }
 
+        if (database instanceof MSSQLDatabase)
+        {
+            // return statements to modify table triggers
+            return generateStatementForMSSQLDatabase(database);
+        }
+
+        return new SqlStatement[]
+        {
+            createAddConstraintStmt(database)
+        };
+    }
+
+    private AddForeignKeyConstraintStatement createAddConstraintStmt(Database database)
+    {
         boolean deferrable = false;
         if (getDeferrable() != null)
         {
@@ -264,13 +284,10 @@ public class AddForeignKeyConstraintChange extends AbstractChange
             initiallyDeferred = getInitiallyDeferred();
         }
 
-        return new SqlStatement[]
-        {
-            new AddForeignKeyConstraintStatement(getConstraintName(), getBaseTableSchemaName() == null ? database.getDefaultSchemaName()
-                    : getBaseTableSchemaName(), getBaseTableName(), getBaseColumnNames(), getReferencedTableSchemaName() == null ? database
-                    .getDefaultSchemaName() : getReferencedTableSchemaName(), getReferencedTableName(), getReferencedColumnNames()).setDeferrable(
-                    deferrable).setInitiallyDeferred(initiallyDeferred).setUpdateRule(updateRule).setDeleteRule(deleteRule)
-        };
+        return new AddForeignKeyConstraintStatement(getConstraintName(), getBaseTableSchemaName() == null ? database.getDefaultSchemaName()
+                : getBaseTableSchemaName(), getBaseTableName(), getBaseColumnNames(), getReferencedTableSchemaName() == null ? database
+                .getDefaultSchemaName() : getReferencedTableSchemaName(), getReferencedTableName(), getReferencedColumnNames()).setDeferrable(
+                deferrable).setInitiallyDeferred(initiallyDeferred).setUpdateRule(updateRule).setDeleteRule(deleteRule);
     }
 
     private SqlStatement[] generateStatementsForSQLiteDatabase(Database database) throws UnsupportedChangeException
@@ -281,6 +298,83 @@ public class AddForeignKeyConstraintChange extends AbstractChange
         return new SqlStatement[] {};
     }
 
+    /**
+     * SQL Server databases need to have their triggers modified when new FK
+     * constraints are added with ON DELETE SET NULL specified in the constraint
+     * 
+     * This method is not able to handle multi-column FKs and will probably error out.
+     * 
+     * @param database
+     * @return
+     */
+    private SqlStatement[] generateStatementForMSSQLDatabase(Database database)
+    {
+        List<SqlStatement> stmts = new ArrayList<SqlStatement>();
+        Connection conn = database.getConnection().getUnderlyingConnection();
+
+        // add the add constraint statement
+        stmts.add(createAddConstraintStmt(database));
+
+        String tableName = getReferencedTableName();
+
+        // only modify triggers when ON DELETE SET NULL is used
+        try
+        {
+            if (this.deleteRule != null && this.deleteRule == DatabaseMetaData.importedKeySetNull)
+            {
+                // read the current database trigger
+                String[] currentTrigger = SQLServerTriggerUtil.getDeleteTriggerForTable(tableName, conn);
+
+                Set<String[]> fks = new HashSet<String[]>();
+
+                // if no trigger exists, add a stmt to create one
+                if (currentTrigger != null)
+                {
+                    String triggerQuery = currentTrigger[2];
+
+                    // parse the trigger query to get the set of referencing tables and columns
+                    Set<String[]> referencingPairs = SQLServerTriggerUtil.findCascadeUpdateStatements(currentTrigger[0], tableName, triggerQuery);
+                    fks.addAll(referencingPairs);
+                }
+
+                String[] referencingFK = new String[2];
+                referencingFK[0] = getBaseTableName();
+                referencingFK[1] = getBaseColumnNames();
+
+                // add the current table/column pair to the set and generate if it does not already exist
+                if (fks.add(referencingFK))
+                {
+                    // create stmt to drop current trigger if set previously contained other FKs
+                    if (fks.size() > 1)
+                    {
+                        SqlStatement dropStmt = SQLServerTriggerUtil.generateDropTrigger(currentTrigger[0]);
+                        stmts.add(dropStmt);
+                    }
+
+                    // add stmt to add/re-add the trigger this will depend on whether drop was executed)
+                    SqlStatement stmt = SQLServerTriggerUtil.generateCreateTriggerStmt(tableName, getReferencedColumnNames(), fks);
+                    stmts.add(stmt);
+                }
+            }
+
+        }
+        catch (SQLException e)
+        {
+            // in case of exception only add the "add FK constraint" stmt
+        }
+
+        SqlStatement[] stmtsArr = new SqlStatement[stmts.size()];
+        int i = 0;
+        for (SqlStatement stmt : stmts)
+        {
+            stmtsArr[i] = stmt;
+            i++;
+        }
+
+        return stmtsArr;
+    }
+
+    @Override
     protected Change[] createInverses()
     {
         DropForeignKeyConstraintChange inverse = new DropForeignKeyConstraintChange();
@@ -373,7 +467,7 @@ public class AddForeignKeyConstraintChange extends AbstractChange
                 break;
             default:
                 //don't set anything
-                //                    node.setAttribute("onDelete", "NO ACTION");
+                //node.setAttribute("onDelete", "NO ACTION");
                 break;
             }
         }
