@@ -1,9 +1,10 @@
 package liquibase.change;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 import liquibase.database.Database;
@@ -22,8 +23,6 @@ import liquibase.util.StringUtils;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-
-import sun.security.krb5.internal.UDPClient;
 
 /**
  * Drops an existing foreign key constraint.
@@ -110,7 +109,7 @@ public class DropForeignKeyConstraintChange extends AbstractChange
     
     private SqlStatement[] generateStatementsForMSSQLDatabase(Database database) throws UnsupportedChangeException
     {
-        Set<SqlStatement> stmts = new HashSet<SqlStatement>();
+        List<SqlStatement> stmts = new ArrayList<SqlStatement>();
         DatabaseConnection dbConn = database.getConnection();
         Connection conn = dbConn.getUnderlyingConnection();
         try
