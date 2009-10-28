@@ -2,6 +2,7 @@ package liquibase.change;
 
 import liquibase.database.DB2Database;
 import liquibase.database.Database;
+import liquibase.database.MSSQLDatabase;
 import liquibase.database.SQLiteDatabase;
 import liquibase.database.SQLiteDatabase.AlterTableVisitor;
 import liquibase.database.sql.DropColumnStatement;
@@ -9,6 +10,7 @@ import liquibase.database.sql.ReorganizeTableStatement;
 import liquibase.database.sql.SqlStatement;
 import liquibase.database.structure.Column;
 import liquibase.database.structure.DatabaseObject;
+import liquibase.database.structure.DatabaseSnapshot;
 import liquibase.database.structure.Index;
 import liquibase.database.structure.Table;
 import liquibase.exception.JDBCException;
@@ -76,6 +78,25 @@ public class DropColumnChange extends AbstractChange {
 		}
 			
         List<SqlStatement> statements = new ArrayList<SqlStatement>();
+        
+        // validate all existing SQL Server triggers when dropping a table 
+        if (database instanceof MSSQLDatabase)
+        {
+            try
+            {
+                DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
+                Table table = snap.getTable(this.tableName);
+                Column column = table.getColumn(this.columnName);
+                Set<DatabaseObject> deletedObjects = new HashSet<DatabaseObject>();
+                deletedObjects.add(column);
+                statements.addAll(SQLServerTriggerUtil.validateAllTriggers(database, deletedObjects));
+            }
+            catch (Exception e)
+            {
+                throw new UnsupportedChangeException(e.getMessage(), e);
+            }
+        }
+        
         String schemaName = getSchemaName() == null?database.getDefaultSchemaName():getSchemaName();
         
         statements.add(new DropColumnStatement(schemaName, getTableName(), getColumnName()));

@@ -22,3 +22,22 @@ validate all triggers:
 	if table/columns changed, drop re-add trigger
             
      end
+     
+     
+changes that will affect FKs and Triggers as a side effect
+ones we've changed:
+- DropColumnChange
+- DropTableChange
+ones we're not going to change because the FKs will always be added separately
+- AddColumnChange
+- AddTableChange
+
+changes that require you to previously drop FKs
+- RenameColumnChange
+- MergeColumnChange
+- ModifyColumnChange
+
+changes that will directly affect FKs and Triggers
+- AddForeignKeyConstraintChange
+- DropForeignKeyConstraintChange
+- DropAllForeignKeyConstraintsChange - this one creates child DropForeignKeyConstraintChange objects

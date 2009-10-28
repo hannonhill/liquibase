@@ -9,8 +9,10 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,6 +22,7 @@ import liquibase.database.DatabaseConnection;
 import liquibase.database.MSSQLDatabase;
 import liquibase.database.sql.SqlStatement;
 import liquibase.database.structure.Column;
+import liquibase.database.structure.DatabaseObject;
 import liquibase.database.structure.DatabaseSnapshot;
 import liquibase.database.structure.ForeignKey;
 import liquibase.database.structure.PrimaryKey;
@@ -54,16 +57,18 @@ public final class SQLServerTriggerUtil
      * the fixing queries are returned in an array.
      * 
      * @param database
-     * @return Returns an array of SqlStatements that will fix any invalid triggers
+     * @param deletedObjects Objects that will be removed during this tx and thus
+     *        should not be considered part of the current schema
+     * @return Returns a list of SqlStatements that will fix any invalid triggers
      * @throws Exception
      */
-    public static SqlStatement[] validateAllTriggers(Database database) throws Exception
+    public static List<SqlStatement> validateAllTriggers(Database database, Set<DatabaseObject> deletedObjects) throws Exception
     {
         DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
         DatabaseConnection dbConn = database.getConnection();
         Connection conn = dbConn.getUnderlyingConnection();
         
-        Set<SqlStatement> stmts = new HashSet<SqlStatement>();
+        List<SqlStatement> stmts = new ArrayList<SqlStatement>();
 
         // get all triggers for Cascade tables
         Set<String[]> triggers = getRelevantTriggers(conn);
@@ -79,13 +84,13 @@ public final class SQLServerTriggerUtil
             for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
             {
                 String[] updateStmt = iter.next();
+                
                 // verify if the table/column exists
-
                 String referencingTable = updateStmt[0];
                 String referencingColumn = updateStmt[1];
 
                 Table table = snap.getTable(referencingTable);
-                if (table == null)
+                if (table == null || deletedObjects.contains(table))
                 {
                     // table does not exist. remove the stmt and continue.
                     iter.remove();
@@ -93,7 +98,7 @@ public final class SQLServerTriggerUtil
                 }
 
                 Column col = table.getColumn(referencingColumn);
-                if (col == null)
+                if (col == null || deletedObjects.contains(col))
                 {
                     // column does not exist. remove the stmt and continue.
                     iter.remove();
@@ -126,7 +131,7 @@ public final class SQLServerTriggerUtil
             }
         }
         
-        return stmts.toArray(new SqlStatement[stmts.size()]);
+        return stmts;
     }
 
     /**
