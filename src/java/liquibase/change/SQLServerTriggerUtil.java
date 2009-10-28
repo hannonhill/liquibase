@@ -109,14 +109,17 @@ public final class SQLServerTriggerUtil
                 // that references the trigger's table and PK column
                 Set<ForeignKey> fks = snap.getForeignKeys();
                 boolean fkFound = false;
+                System.out.println("Iterating over all FKs.");
                 for (ForeignKey fk : fks)
                 {
+                    System.out.println("fk name: " + fk.getName() + ", fk table: " + fk.getForeignKeyTable().getName() + ", fk cols: " + fk.getForeignKeyColumns() + ", pk table: " + fk.getPrimaryKeyTable().getName() + ", pk cols: " + fk.getPrimaryKeyColumns());
                     if (fk.getForeignKeyTable().equals(table) && fk.getForeignKeyColumns().equals(col.getName())
                             && fk.getPrimaryKeyTable().getName().equalsIgnoreCase(tableName) && fk.getPrimaryKeyColumns().equals(pkCol))
                     {
                         fkFound = true;
                     }
                 }
+                System.out.println("Finished iterating  over all FKs.\n");
                 
                 if (!fkFound)
                 {
@@ -196,7 +199,7 @@ public final class SQLServerTriggerUtil
 
         // get all trigger, table names
         ResultSet rs = stmt
-                .executeQuery("select name as 'Trigger', object_name(parent_obj) as 'Table' from sysobjects where xtype = 'TR' AND Table='"
+                .executeQuery("select name as 'Trigger', object_name(parent_obj) as 'Table' from sysobjects where xtype = 'TR' AND object_name(parent_obj)='"
                         + tableName + "'");
         if (!rs.next())
         {
