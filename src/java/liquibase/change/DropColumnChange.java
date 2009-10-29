@@ -79,24 +79,6 @@ public class DropColumnChange extends AbstractChange {
 			
         List<SqlStatement> statements = new ArrayList<SqlStatement>();
         
-        // validate all existing SQL Server triggers when dropping a table 
-        if (database instanceof MSSQLDatabase)
-        {
-            try
-            {
-                DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
-                Table table = snap.getTable(this.tableName);
-                Column column = table.getColumn(this.columnName);
-                Set<DatabaseObject> deletedObjects = new HashSet<DatabaseObject>();
-                deletedObjects.add(column);
-                statements.addAll(SQLServerTriggerUtil.validateAllTriggers(database, deletedObjects));
-            }
-            catch (Exception e)
-            {
-                throw new UnsupportedChangeException(e.getMessage(), e);
-            }
-        }
-        
         String schemaName = getSchemaName() == null?database.getDefaultSchemaName():getSchemaName();
         
         statements.add(new DropColumnStatement(schemaName, getTableName(), getColumnName()));
