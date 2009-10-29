@@ -146,31 +146,34 @@ public class DropForeignKeyConstraintChange extends AbstractChange
             // find the trigger
             String[] trigger = SQLServerTriggerUtil.getDeleteTriggerForTable(referencedTableName, conn);
 
-            // parse the trigger for set of tables/columns
-            Set<String[]> updateStmts = SQLServerTriggerUtil.findCascadeUpdateStatements(trigger[0], trigger[1], trigger[2]);
-            int initialSize = updateStmts.size();
-            for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
+            // only look to validate existing triggers
+            if (trigger != null)
             {
-                String[] updateStmt = iter.next();
-                String tableName = updateStmt[0];
-                String colName = updateStmt[1];
-
-                if (referencingTableName.equalsIgnoreCase(tableName) && referencingColName.equalsIgnoreCase(colName))
+                // parse the trigger for set of tables/columns
+                Set<String[]> updateStmts = SQLServerTriggerUtil.findCascadeUpdateStatements(trigger[0], trigger[1], trigger[2]);
+                int initialSize = updateStmts.size();
+                for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
                 {
-                    iter.remove();
+                    String[] updateStmt = iter.next();
+                    String tableName = updateStmt[0];
+                    String colName = updateStmt[1];
+
+                    if (referencingTableName.equalsIgnoreCase(tableName) && referencingColName.equalsIgnoreCase(colName))
+                    {
+                        iter.remove();
+                    }
+                }
+
+                // if the set contained the FKs table/column, then recreate the trigger
+                if (updateStmts.size() < initialSize)
+                {
+                    stmts.add(SQLServerTriggerUtil.generateDropTrigger(trigger[0]));
+                    stmts.add(SQLServerTriggerUtil.generateCreateTriggerStmt(trigger[1], referencedColName, updateStmts));
                 }
             }
 
-            // if the set contained the FKs table/column, then recreate the trigger
-            if (updateStmts.size() < initialSize)
-            {
-                stmts.add(SQLServerTriggerUtil.generateDropTrigger(trigger[0]));
-                stmts.add(SQLServerTriggerUtil.generateCreateTriggerStmt(trigger[1], referencedColName, updateStmts));
-            }
-            
-            stmts.add(new DropForeignKeyConstraintStatement(
-                    getBaseTableSchemaName() == null ? database.getDefaultSchemaName() : getBaseTableSchemaName(), getBaseTableName(),
-                    getConstraintName()));
+            stmts.add(new DropForeignKeyConstraintStatement(getBaseTableSchemaName() == null ? database.getDefaultSchemaName()
+                    : getBaseTableSchemaName(), getBaseTableName(), getConstraintName()));
 
             return stmts.toArray(new SqlStatement[stmts.size()]);
         }
