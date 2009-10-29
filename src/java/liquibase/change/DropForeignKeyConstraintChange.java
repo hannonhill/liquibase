@@ -1,6 +1,8 @@
 package liquibase.change;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -14,7 +16,6 @@ import liquibase.database.SQLiteDatabase;
 import liquibase.database.sql.DropForeignKeyConstraintStatement;
 import liquibase.database.sql.SqlStatement;
 import liquibase.database.structure.DatabaseObject;
-import liquibase.database.structure.DatabaseSnapshot;
 import liquibase.database.structure.ForeignKey;
 import liquibase.database.structure.Table;
 import liquibase.exception.InvalidChangeDefinitionException;
@@ -89,7 +90,7 @@ public class DropForeignKeyConstraintChange extends AbstractChange
             // return special statements for SQLite databases
             return generateStatementsForSQLiteDatabase(database);
         }
-        
+
         if (database instanceof MSSQLDatabase)
         {
             return generateStatementsForMSSQLDatabase(database);
@@ -100,59 +101,83 @@ public class DropForeignKeyConstraintChange extends AbstractChange
             createDropConstraintStmt(database)
         };
     }
-    
+
     private SqlStatement createDropConstraintStmt(Database database)
     {
         return new DropForeignKeyConstraintStatement(getBaseTableSchemaName() == null ? database.getDefaultSchemaName() : getBaseTableSchemaName(),
                 getBaseTableName(), getConstraintName());
     }
-    
+
     private SqlStatement[] generateStatementsForMSSQLDatabase(Database database) throws UnsupportedChangeException
     {
-        List<SqlStatement> stmts = new ArrayList<SqlStatement>();
-        DatabaseConnection dbConn = database.getConnection();
-        Connection conn = dbConn.getUnderlyingConnection();
         try
         {
-            DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
-            ForeignKey fk = snap.getForeignKey(this.constraintName);
-            String referencingCol = fk.getForeignKeyColumns();
-            String referencedTable = fk.getPrimaryKeyTable().getName();
-                
+            List<SqlStatement> stmts = new ArrayList<SqlStatement>();
+            DatabaseConnection dbConn = database.getConnection();
+            Connection conn = dbConn.getUnderlyingConnection();
+            DatabaseMetaData metadata = dbConn.getMetaData();
+
+            String referencingTableName = this.baseTableName;
+            String referencingColName = null;
+            String referencedTableName = null;
+            String referencedColName = null;
+            String fkName = this.constraintName;
+            boolean fkFound = false;
+
+            ResultSet rs = metadata.getImportedKeys(null, null, referencingTableName);
+            while (rs.next())
+            {
+                if (rs.getString("FK_NAME").equalsIgnoreCase(fkName))
+                {
+                    referencingColName = rs.getString("FKCOLUMN_NAME");
+                    referencedTableName = rs.getString("PKTABLE_NAME");
+                    referencedColName = rs.getString("PKCOLUMN_NAME");
+                    fkFound = true;
+                    break;
+                }
+            }
+            rs.close();
+
+            if (!fkFound)
+            {
+                throw new Exception("FK with name: " + fkName + " on table: " + referencingTableName + " cannot be found in database.");
+            }
+
             // find the trigger
-            String[] trigger = SQLServerTriggerUtil.getDeleteTriggerForTable(referencedTable, conn);
-                
+            String[] trigger = SQLServerTriggerUtil.getDeleteTriggerForTable(referencedTableName, conn);
+
             // parse the trigger for set of tables/columns
             Set<String[]> updateStmts = SQLServerTriggerUtil.findCascadeUpdateStatements(trigger[0], trigger[1], trigger[2]);
             int initialSize = updateStmts.size();
-            for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext(); )
+            for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
             {
                 String[] updateStmt = iter.next();
                 String tableName = updateStmt[0];
                 String colName = updateStmt[1];
-                
-                if (this.baseTableName.equalsIgnoreCase(tableName) && referencingCol.equalsIgnoreCase(colName))
+
+                if (referencingTableName.equalsIgnoreCase(tableName) && referencingColName.equalsIgnoreCase(colName))
                 {
                     iter.remove();
                 }
             }
-            
+
             // if the set contained the FKs table/column, then recreate the trigger
             if (updateStmts.size() < initialSize)
             {
                 stmts.add(SQLServerTriggerUtil.generateDropTrigger(trigger[0]));
-                stmts.add(SQLServerTriggerUtil.generateCreateTriggerStmt(trigger[1], fk.getPrimaryKeyColumns(), updateStmts));
+                stmts.add(SQLServerTriggerUtil.generateCreateTriggerStmt(trigger[1], referencedColName, updateStmts));
             }
+            
+            stmts.add(new DropForeignKeyConstraintStatement(
+                    getBaseTableSchemaName() == null ? database.getDefaultSchemaName() : getBaseTableSchemaName(), getBaseTableName(),
+                    getConstraintName()));
+
+            return stmts.toArray(new SqlStatement[stmts.size()]);
         }
         catch (Exception e)
         {
             throw new UnsupportedChangeException(e.getMessage(), e);
         }
-        
-        stmts.add(new DropForeignKeyConstraintStatement(getBaseTableSchemaName() == null ? database.getDefaultSchemaName() : getBaseTableSchemaName(),
-                getBaseTableName(), getConstraintName()));
-        
-        return stmts.toArray(new SqlStatement[stmts.size()]);
     }
 
     private SqlStatement[] generateStatementsForSQLiteDatabase(Database database) throws UnsupportedChangeException

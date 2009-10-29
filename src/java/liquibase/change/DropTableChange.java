@@ -92,7 +92,7 @@ public class DropTableChange extends AbstractChange
                 Table table = snap.getTable(this.tableName);
                 Set<DatabaseObject> deletedObjects = new HashSet<DatabaseObject>();
                 deletedObjects.add(table);
-                stmts.addAll(SQLServerTriggerUtil.validateAllTriggers(database, deletedObjects));
+                stmts.addAll(SQLServerTriggerUtil.validateAllTriggers(database, snap, deletedObjects));
             }
             catch (Exception e)
             {

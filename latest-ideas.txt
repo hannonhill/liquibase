@@ -26,16 +26,16 @@ validate all triggers:
      
 changes that will affect FKs and Triggers as a side effect
 ones we've changed:
-- DropColumnChange
 - DropTableChange
 ones we're not going to change because the FKs will always be added separately
 - AddColumnChange
-- AddTableChange
+- CreateTableChange
 
 changes that require you to previously drop FKs and thus do not need to be modified
 - RenameColumnChange
 - MergeColumnChange
 - ModifyColumnChange
+- DropColumnChange
 
 changes that will directly affect FKs and Triggers
 - AddForeignKeyConstraintChange
@@ -43,8 +43,8 @@ changes that will directly affect FKs and Triggers
 - DropAllForeignKeyConstraintsChange - this one creates child DropForeignKeyConstraintChange objects
 
 Liquibase Notes:
-1. Do not add FK constraints in CreateTable changes because we're not going to process the triggers in that case.
-   I actually think this won't be an issue because we have
+1. Do not add FK constraints in CreateTableChange changes because we're not going to process the triggers in that case.
+   I actually think this won't be an issue because we can't include constraints in CreateTableChanges
 2. Do not add FK constraints in AddColumn change. There's not an elegant way of specifying ON DELETE SET NULL in these
    changes anyway, because AddColumn does not have parameters for ON DELETE behavior the way that AddFKConstraint does.
  
