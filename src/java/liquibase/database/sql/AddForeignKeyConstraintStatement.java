@@ -3,8 +3,8 @@ package liquibase.database.sql;
 import java.sql.DatabaseMetaData;
 
 import liquibase.database.Database;
+import liquibase.database.MSSQLDatabase;
 import liquibase.database.SQLiteDatabase;
-import liquibase.database.OracleDatabase;
 import liquibase.exception.StatementNotSupportedOnDatabaseException;
 
 public class AddForeignKeyConstraintStatement implements SqlStatement
@@ -149,13 +149,18 @@ public class AddForeignKeyConstraintStatement implements SqlStatement
                 }
                 break;
             case DatabaseMetaData.importedKeyNoAction:
-                //don't do anything
-                //                    sql += " ON UPDATE NO ACTION";
+                // don't do anything
+                // sql += " ON UPDATE NO ACTION";
                 break;
             default:
                 break;
             }
         }
+
+        if (database instanceof MSSQLDatabase)
+            return sql;
+
+        // apply ON DELETE rules to all databases except SQL Server
         if (this.deleteRule != null)
         {
             switch (this.deleteRule)
@@ -177,7 +182,7 @@ public class AddForeignKeyConstraintStatement implements SqlStatement
                 break;
             case DatabaseMetaData.importedKeyNoAction:
                 //don't do anything
-                //                    sql += " ON DELETE NO ACTION";
+                //sql += " ON DELETE NO ACTION";
                 break;
             default:
                 break;
