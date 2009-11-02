@@ -10,13 +10,20 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import liquibase.database.Database;
+import liquibase.database.DatabaseConnection;
 import liquibase.database.MSSQLDatabase;
 import liquibase.database.sql.SqlStatement;
+import liquibase.database.structure.Column;
+import liquibase.database.structure.DatabaseSnapshot;
+import liquibase.database.structure.ForeignKey;
+import liquibase.database.structure.PrimaryKey;
+import liquibase.database.structure.Table;
 import liquibase.exception.StatementNotSupportedOnDatabaseException;
 
 /**
@@ -34,6 +41,92 @@ public final class SQLServerTriggerUtil
     private SQLServerTriggerUtil()
     {
 
+    }
+
+    /**
+     * Validates that the tables/columns listed in each Delete
+     * Trigger for every Cascade (i.e. "cxml_") table exists and that
+     * a foreign key exists on the table/column that references the 
+     * trigger's table and PK column.
+     * 
+     * Invalid triggers are fixed by dropping the existing trigger
+     * and re-adding only the valid referencing tables/columns and
+     * the fixing queries are returned in an array.
+     * 
+     * @param database
+     * @return Returns an array of SqlStatements that will fix any invalid triggers
+     * @throws Exception
+     */
+    public static void validateAllTriggers(Database database) throws Exception
+    {
+        DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
+        DatabaseConnection dbConn = database.getConnection();
+        Connection conn = dbConn.getUnderlyingConnection();
+        
+        Set<SqlStatement> stmts = new HashSet<SqlStatement>();
+
+        // get all triggers for Cascade tables
+        Set<String[]> triggers = getRelevantTriggers(conn);
+        for (String[] trigger : triggers)
+        {
+            String triggerName = trigger[0];
+            String tableName = trigger[1];
+            String triggerQuery = trigger[2];
+            PrimaryKey pk = snap.getPrimaryKeyForTable(tableName);
+            String pkCol = pk.getColumnNames();
+            Set<String[]> updateStmts = findCascadeUpdateStatements(triggerName, tableName, triggerQuery);
+            int initialSize = updateStmts.size();
+            for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
+            {
+                String[] updateStmt = iter.next();
+                // verify if the table/column exists
+
+                String referencingTable = updateStmt[0];
+                String referencingColumn = updateStmt[1];
+
+                Table table = snap.getTable(referencingTable);
+                if (table == null)
+                {
+                    // table does not exist. remove the stmt and continue.
+                    iter.remove();
+                    continue;
+                }
+
+                Column col = table.getColumn(referencingColumn);
+                if (col == null)
+                {
+                    // column does not exist. remove the stmt and continue.
+                    iter.remove();
+                    continue;
+                }
+
+                // determine if a FK exists for that table/column combination
+                // that references the trigger's table and PK column
+                Set<ForeignKey> fks = snap.getForeignKeys();
+                boolean fkFound = false;
+                for (ForeignKey fk : fks)
+                {
+                    if (fk.getForeignKeyTable().equals(table) && fk.getForeignKeyColumns().equals(col.getName())
+                            && fk.getPrimaryKeyTable().getName().equalsIgnoreCase(tableName) && fk.getPrimaryKeyColumns().equals(pkCol))
+                    {
+                        fkFound = true;
+                    }
+                }
+                
+                if (!fkFound)
+                {
+                    iter.remove();
+                }
+
+            }
+            if (updateStmts.size() < initialSize)
+            {
+                stmts.add(generateDropTrigger(triggerName));
+                stmts.add(generateCreateTriggerStmt(tableName, pkCol, updateStmts));
+            }
+        }
+        
+        stmts.toArray(new SqlStatement[stmts.size()]);
     }
 
     /**
