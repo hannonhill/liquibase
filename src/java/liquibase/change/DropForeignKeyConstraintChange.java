@@ -1,6 +1,7 @@
 package liquibase.change;
 
 import liquibase.database.Database;
+import liquibase.database.MSSQLDatabase;
 import liquibase.database.SQLiteDatabase;
 import liquibase.database.sql.DropForeignKeyConstraintStatement;
 import liquibase.database.sql.SqlStatement;
