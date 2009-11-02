@@ -120,7 +120,6 @@ public final class SQLServerTriggerUtil
                 // determine if a FK exists for that table/column combination
                 // that references the trigger's table and PK column
                 boolean fkFound = false;
-                System.out.println("Iterating over all FKs for table: " + tableName);
                 rs = metadata.getExportedKeys(null, null, tableName);
                 while (rs.next())
                 {
@@ -129,13 +128,11 @@ public final class SQLServerTriggerUtil
                     String fkName = rs.getString("FK_NAME");
                     if (table.getName().equalsIgnoreCase(fkTable) && col.getName().equalsIgnoreCase(fkColumn))
                     {
-                        System.out.println("Found matching FK: " + fkName + " for table: " + fkTable + ", column: " + fkColumn);
                         fkFound = true;
                         break;
                     }
                 }
                 rs.close();
-                System.out.println("Finished iterating  over all FKs.\n");
 
                 if (!fkFound)
                 {
