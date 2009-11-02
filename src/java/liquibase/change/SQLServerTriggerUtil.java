@@ -57,7 +57,7 @@ public final class SQLServerTriggerUtil
      * @return Returns an array of SqlStatements that will fix any invalid triggers
      * @throws Exception
      */
-    public static void validateAllTriggers(Database database) throws Exception
+    public static SqlStatement[] validateAllTriggers(Database database) throws Exception
     {
         DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
         DatabaseConnection dbConn = database.getConnection();
@@ -126,7 +126,7 @@ public final class SQLServerTriggerUtil
             }
         }
         
-        stmts.toArray(new SqlStatement[stmts.size()]);
+        return stmts.toArray(new SqlStatement[stmts.size()]);
     }
 
     /**
