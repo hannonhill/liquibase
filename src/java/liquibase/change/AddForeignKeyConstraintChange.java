@@ -306,8 +306,9 @@ public class AddForeignKeyConstraintChange extends AbstractChange
      * 
      * @param database
      * @return
+     * @throws UnsupportedChangeException
      */
-    private SqlStatement[] generateStatementForMSSQLDatabase(Database database)
+    private SqlStatement[] generateStatementForMSSQLDatabase(Database database) throws UnsupportedChangeException
     {
         List<SqlStatement> stmts = new ArrayList<SqlStatement>();
         Connection conn = database.getConnection().getUnderlyingConnection();
@@ -360,7 +361,7 @@ public class AddForeignKeyConstraintChange extends AbstractChange
         }
         catch (SQLException e)
         {
-            // in case of exception only add the "add FK constraint" stmt
+            throw new UnsupportedChangeException(e.getMessage(), e);
         }
 
         SqlStatement[] stmtsArr = new SqlStatement[stmts.size()];
