@@ -345,8 +345,8 @@ public class AddForeignKeyConstraintChange extends AbstractChange
                 // add the current table/column pair to the set and generate if it does not already exist
                 if (fks.add(referencingFK))
                 {
-                    // create stmt to drop current trigger if set previously contained other FKs
-                    if (fks.size() > 1)
+                    // create stmt to drop current trigger if one exists
+                    if (currentTrigger != null)
                     {
                         SqlStatement dropStmt = SQLServerTriggerUtil.generateDropTrigger(currentTrigger[0]);
                         stmts.add(dropStmt);
