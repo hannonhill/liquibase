@@ -82,21 +82,6 @@ The available targets at the current stage:
                 <include name="**/*.jar"/>
             </fileset>
         </path>
-
-        <!-- Task definitions -->
-        <taskdef name="retroweaver" classname="net.sourceforge.retroweaver.ant.RetroWeaverTask">
-            <classpath>
-                <fileset dir="${lib.dir}">
-                    <include name="*.jar"/>
-                </fileset>
-                <fileset dir="${lib.compile.dir}">
-                    <include name="*.jar"/>
-                </fileset>
-                <fileset dir="${lib.14jvm.dir}">
-                    <include name="*.jar"/>
-                </fileset>
-            </classpath>
-        </taskdef>
     </target>
 
     <target name="check-jvm" depends="prepare" unless="jvm.ok">
@@ -250,7 +235,7 @@ The available targets at the current stage:
                         includes="liquibase" mode="755"/>
         </tar>
 
-        <antcall target="retroweave" inheritall="true" inheritrefs="true"/>
+        <!-- <antcall target="retroweave" inheritall="true" inheritrefs="true"/> -->
 
         <jar destfile="${release.dir}/${ant.project.name}-SNAPSHOT-14jvm.jar"
              manifest="${src.dir}/../META-INF/MANIFEST.MF" index="true">
@@ -277,8 +262,8 @@ The available targets at the current stage:
             <tarfileset dir="${package.dir}/liquibase-${build.version}-14jvm" prefix="liquibase-${build.version}"
                         includes="liquibase" mode="755"/>
         </tar>
-        <zip destfile="${release.dir}/liquibase-intellij-${build.version}-src.zip" basedir="${intellij.basedir}"
-                excludes="build/**,build-test/**"/>
+        <!-- <zip destfile="${release.dir}/liquibase-intellij-${build.version}-src.zip" basedir="${intellij.basedir}"
+                excludes="build/**,build-test/**"/> -->
     </target>
 
     <!-- target: SITE -->
@@ -643,9 +628,6 @@ The available targets at the current stage:
         <antcall target="clean" inheritAll="true" inheritRefs="true"/>
         <antcall target="prepare" inheritAll="true" inheritRefs="true"/>
         <antcall target="compile" inheritAll="true" inheritRefs="true"/>
-        <antcall target="javadoc" inheritAll="true" inheritRefs="true"/>
-        <antcall target="doxygen" inheritAll="true" inheritRefs="true"/>
-        <antcall target="site" inheritAll="true" inheritRefs="true"/>
         <antcall target="package" inheritAll="true" inheritRefs="true"/>
     </target>
 </project>
