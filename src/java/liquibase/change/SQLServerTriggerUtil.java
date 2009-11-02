@@ -6,6 +6,7 @@
 package liquibase.change;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -24,8 +25,6 @@ import liquibase.database.sql.SqlStatement;
 import liquibase.database.structure.Column;
 import liquibase.database.structure.DatabaseObject;
 import liquibase.database.structure.DatabaseSnapshot;
-import liquibase.database.structure.ForeignKey;
-import liquibase.database.structure.PrimaryKey;
 import liquibase.database.structure.Table;
 import liquibase.exception.StatementNotSupportedOnDatabaseException;
 
@@ -56,18 +55,20 @@ public final class SQLServerTriggerUtil
      * and re-adding only the valid referencing tables/columns and
      * the fixing queries are returned in an array.
      * 
-     * @param database
+     * @param database Liquibase Database
+     * @param snap Liquibase DatabaseSnapshot
      * @param deletedObjects Objects that will be removed during this tx and thus
      *        should not be considered part of the current schema
      * @return Returns a list of SqlStatements that will fix any invalid triggers
-     * @throws Exception
+     * @throws SQLException
      */
-    public static List<SqlStatement> validateAllTriggers(Database database, Set<DatabaseObject> deletedObjects) throws Exception
+    public static List<SqlStatement> validateAllTriggers(Database database, DatabaseSnapshot snap, Set<DatabaseObject> deletedObjects)
+            throws SQLException
     {
-        DatabaseSnapshot snap = database.createDatabaseSnapshot(null, null);
         DatabaseConnection dbConn = database.getConnection();
+        DatabaseMetaData metadata = dbConn.getMetaData();
         Connection conn = dbConn.getUnderlyingConnection();
-        
+
         List<SqlStatement> stmts = new ArrayList<SqlStatement>();
 
         // get all triggers for Cascade tables
@@ -77,14 +78,25 @@ public final class SQLServerTriggerUtil
             String triggerName = trigger[0];
             String tableName = trigger[1];
             String triggerQuery = trigger[2];
-            PrimaryKey pk = snap.getPrimaryKeyForTable(tableName);
-            String pkCol = pk.getColumnNames();
+            String pkColName = null;
+
+            ResultSet rs = metadata.getPrimaryKeys(null, null, tableName);
+            if (rs.next())
+            {
+                pkColName = rs.getString("COLUMN_NAME");
+            }
+            else
+            {
+                throw new SQLException("Unable to find primary keys for table: " + tableName);
+            }
+            rs.close();
+
             Set<String[]> updateStmts = findCascadeUpdateStatements(triggerName, tableName, triggerQuery);
             int initialSize = updateStmts.size();
             for (Iterator<String[]> iter = updateStmts.iterator(); iter.hasNext();)
             {
                 String[] updateStmt = iter.next();
-                
+
                 // verify if the table/column exists
                 String referencingTable = updateStmt[0];
                 String referencingColumn = updateStmt[1];
@@ -107,20 +119,24 @@ public final class SQLServerTriggerUtil
 
                 // determine if a FK exists for that table/column combination
                 // that references the trigger's table and PK column
-                Set<ForeignKey> fks = snap.getForeignKeys();
                 boolean fkFound = false;
-                System.out.println("Iterating over all FKs.");
-                for (ForeignKey fk : fks)
+                System.out.println("Iterating over all FKs for table: " + tableName);
+                rs = metadata.getExportedKeys(null, null, tableName);
+                while (rs.next())
                 {
-                    System.out.println("fk name: " + fk.getName() + ", fk table: " + fk.getForeignKeyTable().getName() + ", fk cols: " + fk.getForeignKeyColumns() + ", pk table: " + fk.getPrimaryKeyTable().getName() + ", pk cols: " + fk.getPrimaryKeyColumns());
-                    if (fk.getForeignKeyTable().equals(table) && fk.getForeignKeyColumns().equals(col.getName())
-                            && fk.getPrimaryKeyTable().getName().equalsIgnoreCase(tableName) && fk.getPrimaryKeyColumns().equals(pkCol))
+                    String fkColumn = rs.getString("FKCOLUMN_NAME");
+                    String fkTable = rs.getString("FKTABLE_NAME");
+                    String fkName = rs.getString("FK_NAME");
+                    if (table.getName().equalsIgnoreCase(fkTable) && col.getName().equalsIgnoreCase(fkColumn))
                     {
+                        System.out.println("Found matching FK: " + fkName + " for table: " + fkTable + ", column: " + fkColumn);
                         fkFound = true;
+                        break;
                     }
                 }
+                rs.close();
                 System.out.println("Finished iterating  over all FKs.\n");
-                
+
                 if (!fkFound)
                 {
                     iter.remove();
@@ -130,10 +146,10 @@ public final class SQLServerTriggerUtil
             if (updateStmts.size() < initialSize)
             {
                 stmts.add(generateDropTrigger(triggerName));
-                stmts.add(generateCreateTriggerStmt(tableName, pkCol, updateStmts));
+                stmts.add(generateCreateTriggerStmt(tableName, pkColName, updateStmts));
             }
         }
-        
+
         return stmts;
     }
 
@@ -146,9 +162,9 @@ public final class SQLServerTriggerUtil
      * 
      * @param conn
      * @return Returns a Set of Pairs of corresponding tables names and trigger queries
-     * @throws Exception
+     * @throws SQLException
      */
-    public static Set<String[]> getRelevantTriggers(Connection conn) throws Exception
+    public static Set<String[]> getRelevantTriggers(Connection conn) throws SQLException
     {
         Set<String[]> triggers = new HashSet<String[]>();
         Statement stmt = conn.createStatement();
@@ -170,6 +186,7 @@ public final class SQLServerTriggerUtil
             trigger[1] = tableName;
             triggers.add(trigger);
         }
+        rs.close();
 
         // fetch trigger queries for trigger names
         for (String[] trigger : triggers)
@@ -207,6 +224,7 @@ public final class SQLServerTriggerUtil
         }
 
         String triggerName = rs.getString("Trigger");
+        rs.close();
 
         String[] trigger = new String[3];
         trigger[0] = triggerName;
@@ -215,31 +233,33 @@ public final class SQLServerTriggerUtil
         return trigger;
     }
 
+    /**
+     * Fetches the contents of a trigger query for the 
+     * trigger with the input name using the input statement.
+     * 
+     * @param stmt
+     * @param triggerName
+     * @return
+     * @throws SQLException
+     */
     private static String getTriggerQuery(Statement stmt, String triggerName) throws SQLException
     {
-        ResultSet rs = null;
-        try
+        ResultSet rs = stmt.executeQuery("sp_helptext " + triggerName);
+        int results = 0;
+        StringBuilder triggerQuery = new StringBuilder();
+        while (rs.next())
         {
-            rs = stmt.executeQuery("sp_helptext " + triggerName);
-            int results = 0;
-            StringBuilder triggerQuery = new StringBuilder();
-            while (rs.next())
-            {
-                triggerQuery.append(rs.getString(1));
-                results++;
-            }
-            if (results == 0)
-            {
-                return null;
-            }
+            triggerQuery.append(rs.getString(1));
+            results++;
+        }
 
-            return triggerQuery.toString();
-        }
-        finally
+        rs.close();
+        if (results == 0)
         {
-            if (rs != null)
-                rs.close();
+            return null;
         }
+
+        return triggerQuery.toString();
     }
 
     /**
@@ -276,7 +296,7 @@ public final class SQLServerTriggerUtil
      * Create a SqlStatement to drop the trigger with the input name
      * 
      * @param triggerName
-     * @return
+     * @return Returns a SqlStatement that will drop the trigger with the given name
      */
     public static SqlStatement generateDropTrigger(String triggerName)
     {
@@ -313,7 +333,7 @@ public final class SQLServerTriggerUtil
      * @param tableName Table to create the trigger for
      * @param pkColName PK column in the referenced Table
      * @param referencingPairs Pairs of Table and Column names that reference the table
-     * @return Returns a SqlStatement
+     * @return Returns a SqlStatement that will create a trigger
      */
     public static SqlStatement generateCreateTriggerStmt(String tableName, String pkColName, Set<String[]> referencingPairs)
     {
